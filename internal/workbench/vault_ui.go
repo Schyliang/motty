@@ -68,7 +68,18 @@ func hostSecretName(catalogID, part string) string { return "host:" + catalogID 
 // passwordName and otpSecretName are the secrets of the host the prompt of a
 // session is about (see hostCatalog.secretOwner).
 func (state *State) passwordName(session *Session) string {
-	return hostSecretName(state.secretOwner(session.host, session.endpoint, session.role), hostPasswordPart)
+	return hostSecretName(state.secretOwner(session.host, session.endpoint, session.role), passwordPart(session.host, session.endpoint))
+}
+
+func vncSystemPasswordPart(username string) string { return "vnc-system-password:" + username }
+
+func passwordPart(host Host, endpoint sshconn.Endpoint) string {
+	if host.Protocol == protocolVNC {
+		if username, ok := strings.CutPrefix(endpoint.User, vncAccountPrefix); ok {
+			return vncSystemPasswordPart(username)
+		}
+	}
+	return hostPasswordPart
 }
 
 func (state *State) otpSecretName(session *Session) string {
@@ -201,7 +212,7 @@ func (state *State) canAutofill(session *Session, status sshconn.Status) bool {
 	var name string
 	switch {
 	case status.Phase == sshconn.PhasePasswordPrompt && isPasswordQuestion(status.Questions):
-		name = hostSecretName(owner, hostPasswordPart)
+		name = hostSecretName(owner, passwordPart(session.host, status.Endpoint))
 	case status.Phase == sshconn.PhaseKeyPassphrasePrompt && status.IdentityPath != "":
 		name = passphraseSecretName(status.IdentityPath)
 	default:
