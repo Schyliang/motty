@@ -17,6 +17,10 @@ type vncHostKey struct {
 	Fingerprint string `json:"fingerprint"`
 }
 
+func vncIdentityKind(kind string) bool {
+	return kind == vncServerKeyType || kind == vncCertificateType
+}
+
 // An unpinned third entry must not let two conflicting identities be folded
 // together. Check the whole duplicate group before choosing a surviving host.
 func conflictingVNCHostKeys(hosts []Host) map[mergeKey]bool {
@@ -78,7 +82,7 @@ func (host Host) vncFingerprint(address, kind string) string {
 // rememberVNCServerKey runs on the UI thread before approving the waiting
 // handshake. A failed save or a concurrent host/key change never grants trust.
 func (state *State) rememberVNCServerKey(session *Session) error {
-	if session.phase != sshconn.PhaseHostKeyPrompt || session.host.Protocol != protocolVNC || session.hostKey.Type != vncServerKeyType {
+	if session.phase != sshconn.PhaseHostKeyPrompt || session.host.Protocol != protocolVNC || !vncIdentityKind(session.hostKey.Type) {
 		return errors.New("VNC identity is not awaiting approval")
 	}
 	if state.config == nil {

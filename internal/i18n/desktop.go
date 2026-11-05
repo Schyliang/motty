@@ -15,6 +15,8 @@ type DesktopMessages struct {
 	VNCSystemUser             string
 	VNCKeyNewFmt              string
 	VNCKeyChangedFmt          string
+	VNCCertNewFmt             string
+	VNCCertChangedFmt         string
 	StripVNCEncrypted         string
 	FieldRDPUser              string
 	RDPUserHint               string
@@ -24,6 +26,7 @@ type DesktopMessages struct {
 	StripTLS                  string
 	ViaSSH                    string
 	ShareClipboard            string
+	AllowVNCAuthOnly          string
 	HideBars                  string
 	ConsoleSession            string
 	VNCPlaintext              string

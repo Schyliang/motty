@@ -297,9 +297,15 @@ type Options struct {
 	// Password is empty. It may block until the user has answered; the same
 	// connection then goes on. An error ends the attempt.
 	AskPassword func() (string, error)
-	// AskCredentials obtains a VNC RSA-AES account and its password, separately
-	// from a legacy VNC password.
+	// AskCredentials obtains an account and its password for VNC RSA-AES or
+	// VeNCrypt authentication. It is distinct from a legacy VNC password.
 	AskCredentials func() (username, password string, err error)
+	// AllowUnencrypted permits VNC's explicitly requested authentication-only
+	// encryption modes; the session itself is not protected by those modes.
+	AllowUnencrypted bool
+	// ServerName is the user-entered VNC host for TLS verification when the
+	// actual connection goes through a tunnel or proxy.
+	ServerName string
 	// Notify is called, from any goroutine, when the session has something new:
 	// a changed picture, a clipboard, the end of the connection. It must not
 	// block.
@@ -328,9 +334,13 @@ type Options struct {
 	// its interface at that scale (RDP), so that text and controls come out the
 	// size the user's own display makes them; zero is 1.
 	Scale float32
-	// VerifyCertificate checks an RDP server's DER certificate before any
-	// secret is sent. address is the user-entered name used for pinning.
-	// A callback error ends the connection. Nil is only used by tests.
+	// VerifyCertificate is called with the DER certificate a server presents over
+	// TLS (RDP or VNC), before any secret is sent. A server's
+	// self-signed certificate cannot be checked against an authority, so the
+	// caller decides, typically by pinning: an error ends the attempt. address is
+	// what the user typed (the name the pin is kept under), not necessarily where
+	// the bytes went. VNC uses normal CA and hostname verification when nil;
+	// RDP accepts any certificate when nil, which only tests do.
 	VerifyCertificate func(address string, der []byte) error
 	// VerifyServerKey checks a RealVNC server's canonical PKIX RSA public key
 	// before the client sends credentials. Nil does not trust an RSA-AES server.

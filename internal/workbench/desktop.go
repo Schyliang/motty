@@ -1155,3 +1155,11 @@ func (state *State) vncKeyDescription(key sshconn.HostKeyInfo) string {
 	}
 	return fmt.Sprintf(m.VNCKeyNewFmt, key.Address)
 }
+
+func (state *State) vncCertificateDescription(key sshconn.HostKeyInfo) string {
+	m := state.messages.Desktop
+	if len(key.Known) > 0 {
+		return fmt.Sprintf(m.VNCCertChangedFmt, key.Address, key.Known[0])
+	}
+	return fmt.Sprintf(m.VNCCertNewFmt, key.Address)
+}

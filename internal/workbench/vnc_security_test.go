@@ -2,11 +2,58 @@ package workbench
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/vivaui/viva/text"
 	"motty/internal/desktop"
+	"motty/internal/desktop/rdp"
+	"motty/internal/sshconn"
 )
+
+func TestVNCAuthOnlyConsentIsExplicitSavedAndProtocolSpecific(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.openHostDialog()
+	state.clickHostProtocol(hitDialogProtocolVNC)
+	if state.editor.host(0).VNCAuthOnly {
+		t.Fatal("authentication-only encryption enabled by default")
+	}
+	canvas, _ := paintedTexts(state)
+	if _, ok := hitByID(canvas, hitDialogVNCAuthOnly); !ok {
+		t.Fatal("VNC encryption permission is unavailable")
+	}
+	state.clickHostProtocol(hitDialogVNCAuthOnly)
+	host := state.editor.host(0)
+	data, err := json.Marshal(host.transport())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved savedTransport
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatal(err)
+	}
+	var restored Host
+	if !restored.applyTransport(saved) || !restored.VNCAuthOnly {
+		t.Fatal("VNC encryption permission lost on persistence")
+	}
+	state.editor.load(restored)
+	if !state.editor.host(0).VNCAuthOnly {
+		t.Fatal("editing/copying a VNC host lost its explicit permission")
+	}
+	state.clickHostProtocol(hitDialogProtocolRDP)
+	if state.editor.host(0).VNCAuthOnly || state.editor.host(0).transport().VNCAuthOnly {
+		t.Fatal("VNC encryption permission propagated to RDP")
+	}
+	canvas, _ = paintedTexts(state)
+	if _, ok := hitByID(canvas, hitDialogVNCAuthOnly); ok {
+		t.Fatal("RDP exposes a VNC-only setting")
+	}
+	if sameSavedHost(savedHost{}, savedHost{savedTransport: savedTransport{VNCAuthOnly: true}}) {
+		t.Fatal("incremental persistence ignored encryption permission change")
+	}
+}
 
 func TestVNCExplicitEmptyUsernameKeepsItsPasswordSeparate(t *testing.T) {
 	answers := make(chan [2]string, 1)
@@ -26,14 +73,14 @@ func TestVNCExplicitEmptyUsernameKeepsItsPasswordSeparate(t *testing.T) {
 	if len(state.passwordFields) != 2 || state.passwordFields[1].String() != "" {
 		t.Fatal("the legacy password prefilled an account-based login")
 	}
-	state.passwordFields[1] = *text.NewEditor("account password")
+	state.passwordFields[1] = *text.NewEditor("WayVNC password")
 	state.secrets.save = true
 	state.Click(hitPasswordSubmit)
 	waitUntil(t, state, "empty-user desktop", func() bool { return session.desk != nil })
-	if got := <-answers; got != [2]string{"", "account password"} {
+	if got := <-answers; got != [2]string{"", "WayVNC password"} {
 		t.Fatalf("submitted %q", got)
 	}
-	if got, ok := vaultValue(t, state, hostSecretName(host.CatalogID, vncSystemPasswordPart(""))); !ok || got != "account password" {
+	if got, ok := vaultValue(t, state, hostSecretName(host.CatalogID, vncSystemPasswordPart(""))); !ok || got != "WayVNC password" {
 		t.Fatal("empty-account password was not saved separately")
 	}
 	if got, ok := vaultValue(t, state, legacy); !ok || got != "legacy password" {
@@ -86,5 +133,42 @@ func TestVNCEmptyPasswordKeepsPromptOpen(t *testing.T) {
 				t.Fatalf("password=%q", got)
 			}
 		})
+	}
+}
+
+func TestVNCTLSCertificatePinsCannotReuseRSAOrRDPPins(t *testing.T) {
+	certificate := []byte("TLS certificate DER from protocol verifier")
+	state, host := realVNCState(t, "alice", func(ctx context.Context, request desktopRequest) (desktop.Session, error) {
+		if err := request.Verify("pi.example.com:5900", certificate); err != nil {
+			return nil, err
+		}
+		return &encryptedVNC{newPictureOnly()}, nil
+	})
+	host.VNCKeys = []vncHostKey{{Address: "pi.example.com:5900", Kind: vncServerKeyType, Fingerprint: rdp.Fingerprint(certificate)}}
+	state.hosts[state.hostIndex(host.ID)] = host
+	if err := state.saveWithResult(); err != nil {
+		t.Fatal(err)
+	}
+	openHost(state)
+	session, _ := state.sessionByIDPointer(state.activeSessionID)
+	waitUntil(t, state, "VNC certificate", func() bool { return state.modal == modalHostKey })
+	if session.hostKey.Type != vncCertificateType || len(session.hostKey.Known) != 0 || strings.Contains(state.hostKeyDescription, "Windows") {
+		t.Fatalf("wrong certificate identity question: %+v", session.hostKey)
+	}
+	state.Click(hitHostKeyTrust)
+	waitUntil(t, state, "TLS desktop", func() bool { return session.desk != nil })
+	saved, ok := state.hostByCatalogID(host.CatalogID)
+	if !ok || saved.vncFingerprint("pi.example.com:5900", vncCertificateType) != rdp.Fingerprint(certificate) || len(saved.VNCKeys) != 2 {
+		t.Fatal("TLS identity did not remain separate from RSA identity")
+	}
+	certificate = []byte("changed TLS certificate")
+	session.desk.session.Close()
+	state.reconnect(session)
+	waitUntil(t, state, "changed VNC certificate", func() bool { return session.phase == sshconn.PhaseFailed })
+	if len(session.hostKey.Known) != 1 || state.modal == modalHostKey {
+		t.Fatal("changed certificate was offered for override")
+	}
+	if !errors.Is(session.err, sshconn.ErrHostKeyChanged) {
+		t.Fatalf("certificate rejection returned %v", session.err)
 	}
 }

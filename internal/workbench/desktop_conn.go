@@ -104,6 +104,14 @@ func openDesktopSession(ctx context.Context, request desktopRequest) (desktop.Se
 		options.Username = host.User
 	}
 	options.AskCredentials = request.AskCredentials
+	options.AllowUnencrypted = host.VNCAuthOnly
+	options.ServerName = host.Address
+	if request.Verify != nil {
+		typedAddress := net.JoinHostPort(host.Address, strconv.Itoa(int(host.Port)))
+		options.VerifyCertificate = func(_ string, der []byte) error {
+			return request.Verify(typedAddress, der)
+		}
+	}
 	if request.VerifyServerKey != nil {
 		typedAddress := net.JoinHostPort(host.Address, strconv.Itoa(int(host.Port)))
 		options.VerifyServerKey = func(_ string, publicKeyDER []byte) error {
@@ -199,6 +207,9 @@ type certReply struct{ accept, save bool }
 // the connection. It blocks until the question is answered or the connection
 // cancelled.
 func (conn *desktopConn) verifyCertificate(address string, der []byte) error {
+	if conn.request.Host.Protocol == protocolVNC {
+		return conn.verifyIdentity(address, "vnc-tls:"+address, vncCertificateType, der)
+	}
 	return conn.verifyIdentity(address, address, rdpCertificateType, der)
 }
 
@@ -280,6 +291,8 @@ func (conn *desktopConn) verifyIdentity(address, pinAddress, keyType string, der
 const rdpCertificateType = "RDP certificate (X.509)"
 
 const vncServerKeyType = "VNC server key (RSA)"
+
+const vncCertificateType = "VNC certificate (X.509)"
 
 // startDirect begins dialing the VNC server.
 func (conn *desktopConn) startDirect() { go conn.run() }

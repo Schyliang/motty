@@ -64,6 +64,9 @@ type Host struct {
 	Clipboard  bool
 	Console    bool
 	Chromeless bool
+	// VNCAuthOnly permits RSA-AES modes that encrypt login credentials but
+	// leave the remote desktop session unencrypted. Off unless explicitly set.
+	VNCAuthOnly bool
 	// VNCKeys are public identity pins owned by this catalog entry. The target
 	// and identity kind keep address changes and TLS/RSA identities separate.
 	VNCKeys []vncHostKey
