@@ -1025,7 +1025,7 @@ func (state *State) tellFailure(session *Session, status sshconn.Status) {
 		}
 		t.say("", fmt.Sprintf(m.ConnChangedPresented, status.HostKey.Fingerprint))
 		t.say("", "")
-		if !vncIdentityKind(status.HostKey.Type) {
+		if status.HostKey.Type != vncServerKeyType {
 			t.say(sgrMuted, fmt.Sprintf(m.ConnChangedHintFmt, status.HostKey.File))
 		}
 	case errors.Is(status.Err, sshconn.ErrHostKeyRejected):
@@ -1251,7 +1251,7 @@ func (state *State) clickHostKey(id ui.ID) {
 	}
 	switch id {
 	case hitHostKeyTrust:
-		if session.host.Protocol == protocolVNC && vncIdentityKind(session.hostKey.Type) {
+		if session.host.Protocol == protocolVNC && session.hostKey.Type == vncServerKeyType {
 			id, conn := session.ID, session.conn
 			err := state.rememberVNCServerKey(session)
 			// Refreshing the catalog may move the session slice.
